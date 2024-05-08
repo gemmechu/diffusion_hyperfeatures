@@ -9,6 +9,7 @@ import torch
 from tqdm import tqdm
 import wandb
 import pandas as pd
+import glob 
 
 from archs.correspondence_utils import (
     load_image_pair,
@@ -59,7 +60,7 @@ def get_hyperfeats(diffusion_extractor, aggregation_network, imgs):
     img2_hyperfeats = diffusion_hyperfeats[1][None, ...]
     return img1_hyperfeats, img2_hyperfeats
 
-def get_hyperfeats_modified(img_pair_idx, pair_info, aggregation_network):
+def get_hyperfeats_modified(img_pair_idx, pair_info, aggregation_network,device):
 
     scene_name = pair_info.scene_name[img_pair_idx]
 
@@ -70,10 +71,11 @@ def get_hyperfeats_modified(img_pair_idx, pair_info, aggregation_network):
     img0_feat = torch.empty([3,1280,16,16])
     img1_feat = torch.empty([3,1280,16,16])
     for i in range(3):
-        img0_feat[i] = (torch.load("/data/diffusion_hyperfeatures/datasets/data/proj_md_traindata2/scene_00" + str(scene_name)+"-dense_imgid_" + str(img_id0) +".pt")['dift'][tk_id[i]]).squeeze()
-        img1_feat[i] = (torch.load("/data/diffusion_hyperfeatures/datasets/data/proj_md_traindata2/scene_00" + str(scene_name)+"-dense_imgid_" + str(img_id1) +".pt")['dift'][tk_id[i]]).squeeze()
+        img0_feat[i] = (torch.load("data/proj_md_traindata2/scene_00" + str(scene_name)+"-dense_imgid_" + str(img_id0) +".pt")['dift'][tk_id[i]]).squeeze()
+        img1_feat[i] = (torch.load("data/proj_md_traindata2/scene_00" + str(scene_name)+"-dense_imgid_" + str(img_id1) +".pt")['dift'][tk_id[i]]).squeeze()
 
     input = torch.stack((img0_feat.view((-1, 16, 16)), img1_feat.view((-1, 16, 16))), dim = 0)
+    input = input.to(device)
 
     diffusion_hyperfeats = aggregation_network(input)
     img1_hyperfeats = diffusion_hyperfeats[0][None, ...]
@@ -186,7 +188,12 @@ def train(config, diffusion_extractor, aggregation_network, optimizer, train_ann
 # 05/05/2024
 def train_modified(config, aggregation_network, optimizer, pair_info):
     # TODO : Pseudo pair_info from pair_info which is a dataset of img_pair_idx for which feat maps exist
-    train_anns = pair_info
+    
+    pt_files = glob.glob(os.path.join(config["proj_md_path"], '**', '*.pt'), recursive=True)
+    existing_data = {int(os.path.basename(file).split('_')[-1].replace('.pt', '')) for file in pt_files}
+    condition = pair_info['img_id0'].isin(existing_data) & pair_info['img_id1'].isin(existing_data)
+    train_anns = pair_info[condition]
+    ###############################
     device = config.get("device", "cuda")
     output_size, load_size = get_rescale_size(config)
     np.random.seed(0)
@@ -195,8 +202,8 @@ def train_modified(config, aggregation_network, optimizer, pair_info):
         for i in list(epoch_train_anns.index):
             step = epoch * config["max_steps_per_epoch"] + i
             optimizer.zero_grad()
-            source_points, target_points, _, _, imgs = load_image_pair_modified(i, pair_info, load_size, device, output_size=output_size)
-            img1_hyperfeats, img2_hyperfeats = get_hyperfeats_modified(i, pair_info, aggregation_network)
+            source_points, target_points, _, _, imgs = load_image_pair_modified(i, train_anns, load_size, device, output_size=output_size)
+            img1_hyperfeats, img2_hyperfeats = get_hyperfeats_modified(i, train_anns, aggregation_network,device)
             loss = compute_clip_loss(aggregation_network, img1_hyperfeats, img2_hyperfeats, source_points, target_points, output_size)
             loss.backward()
             optimizer.step()

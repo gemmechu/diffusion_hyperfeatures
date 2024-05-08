@@ -5,8 +5,9 @@ wandb_project: dhf
 results_folder: experiments
 # ======== Data / Logging ========
 pck_threshold: 0.1
-train_path: data/MegaDepth/0020/dense/pairs_metadata.csv
-val_path: data/MegaDepth/0020/dense/pairs_metadata_for_eval.csv
+train_path: data/MegaDepth/0015/dense/pairs_metadata.csv
+val_path: data/MegaDepth/0015/dense/pairs_metadata_for_eval.csv
+proj_md_path: data/proj_md_traindata2
 flip_timesteps: False
 # ======= Ours (All Steps) =======
 # save_timestep: [49, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0]
@@ -23,13 +24,14 @@ plot_every_n_steps: -1
 lr: 1e-3
 # ======== Model Hparams =========
 projection_dim: 384
+dims: [1280,1280,1280]
 # ============== SDv1-5 ==========
 model_id: runwayml/stable-diffusion-v1-5
 # ============== SDv2-1 ==========
 # model_id: stabilityai/stable-diffusion-2-1-base
 diffusion_mode: inversion
-output_resolution: 64
-load_resolution: 512
+output_resolution: 16
+load_resolution: 256
 batch_size: 2
 prompt: ""
 negative_prompt: ""
