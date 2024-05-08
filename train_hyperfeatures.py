@@ -8,6 +8,7 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 import wandb
+import pandas as pd
 
 from archs.correspondence_utils import (
     load_image_pair,
@@ -21,6 +22,7 @@ from archs.correspondence_utils import (
 from archs.stable_diffusion.resnet import collect_dims
 from archs.diffusion_extractor import DiffusionExtractor
 from archs.aggregation_network import AggregationNetwork
+from image_pair_reader import load_image_pair_modified
 
 def get_rescale_size(config):
     output_size = (config["output_resolution"], config["output_resolution"])
@@ -53,6 +55,27 @@ def get_hyperfeats(diffusion_extractor, aggregation_network, imgs):
             feats, _ = diffusion_extractor.forward(imgs)
             b, s, l, w, h = feats.shape
     diffusion_hyperfeats = aggregation_network(feats.float().view((b, -1, w, h)))
+    img1_hyperfeats = diffusion_hyperfeats[0][None, ...]
+    img2_hyperfeats = diffusion_hyperfeats[1][None, ...]
+    return img1_hyperfeats, img2_hyperfeats
+
+def get_hyperfeats_modified(img_pair_idx, pair_info, aggregation_network):
+
+    scene_name = pair_info.scene_name[img_pair_idx]
+
+    img_id0 = pair_info.img_id0[img_pair_idx] 
+    img_id1 = pair_info.img_id1[img_pair_idx] 
+
+    tk_id = [0, 128, 261]
+    img0_feat = torch.empty([3,1280,16,16])
+    img1_feat = torch.empty([3,1280,16,16])
+    for i in range(3):
+        img0_feat[i] = (torch.load("/data/diffusion_hyperfeatures/datasets/data/proj_md_traindata2/scene_00" + str(scene_name)+"-dense_imgid_" + str(img_id0) +".pt")['dift'][tk_id[i]]).squeeze()
+        img1_feat[i] = (torch.load("/data/diffusion_hyperfeatures/datasets/data/proj_md_traindata2/scene_00" + str(scene_name)+"-dense_imgid_" + str(img_id1) +".pt")['dift'][tk_id[i]]).squeeze()
+
+    input = torch.stack((img0_feat.view((-1, 16, 16)), img1_feat.view((-1, 16, 16))), dim = 0)
+
+    diffusion_hyperfeats = aggregation_network(input)
     img1_hyperfeats = diffusion_hyperfeats[0][None, ...]
     img2_hyperfeats = diffusion_hyperfeats[1][None, ...]
     return img1_hyperfeats, img2_hyperfeats
@@ -160,6 +183,30 @@ def train(config, diffusion_extractor, aggregation_network, optimizer, train_ann
                     save_model(config, aggregation_network, optimizer, step)
                     validate(config, diffusion_extractor, aggregation_network, val_anns)
 
+# 05/05/2024
+def train_modified(config, aggregation_network, optimizer, pair_info):
+    # TODO : Pseudo pair_info from pair_info which is a dataset of img_pair_idx for which feat maps exist
+    train_anns = pair_info
+    device = config.get("device", "cuda")
+    output_size, load_size = get_rescale_size(config)
+    np.random.seed(0)
+    for epoch in range(config["max_epochs"]):
+        epoch_train_anns = train_anns.sample(config["max_steps_per_epoch"] , random_state=None)
+        for i in list(epoch_train_anns.index):
+            step = epoch * config["max_steps_per_epoch"] + i
+            optimizer.zero_grad()
+            source_points, target_points, _, _, imgs = load_image_pair_modified(i, pair_info, load_size, device, output_size=output_size)
+            img1_hyperfeats, img2_hyperfeats = get_hyperfeats_modified(i, pair_info, aggregation_network)
+            loss = compute_clip_loss(aggregation_network, img1_hyperfeats, img2_hyperfeats, source_points, target_points, output_size)
+            loss.backward()
+            optimizer.step()
+            wandb.log({"train/loss": loss.item()}, step=step)
+            # if step > 0 and config["val_every_n_steps"] > 0 and step % config["val_every_n_steps"] == 0:
+            #     with torch.no_grad():
+            #         log_aggregation_network(aggregation_network, config)
+            #         save_model(config, aggregation_network, optimizer, step)
+            #         validate(config, diffusion_extractor, aggregation_network, val_anns)
+
 def load_models(config_path):
     config = OmegaConf.load(config_path)
     config = OmegaConf.to_container(config, resolve=True)
@@ -188,18 +235,21 @@ def main(args):
         {"params": aggregation_network.bottleneck_layers.parameters(), "lr": config["lr"]}
     ]
     optimizer = torch.optim.AdamW(parameter_groups, weight_decay=config["weight_decay"])
-    val_anns = json.load(open(config["val_path"]))
+    
     if config.get("train_path"):
         assert config["batch_size"] == 2, "The loss computation compute_clip_loss assumes batch_size=2."
-        train_anns = json.load(open(config["train_path"]))
-        train(config, diffusion_extractor, aggregation_network, optimizer, train_anns, val_anns)
+        # train_anns = json.load(open(config["train_path"]))
+        # train(config, diffusion_extractor, aggregation_network, optimizer, train_anns, val_anns)
+        pair_info = pd.read_csv(config["train_path"])
+        train_modified(config, aggregation_network, optimizer, pair_info)
     else:
+        val_anns = json.load(open(config["val_path"]))
         if config.get("weights_path"):
             aggregation_network.load_state_dict(torch.load(config["weights_path"], map_location="cpu")["aggregation_network"])
         validate(config, diffusion_extractor, aggregation_network, val_anns)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
-    parser.add_argument("--config_path", type=str, help="Path to yaml config file", default="configs/train.yaml")
+    parser.add_argument("--config_path", type=str, help="Path to yaml config file", default="configs/custom.yaml")
     args = parser.parse_args()
     main(args)

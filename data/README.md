@@ -1,0 +1,3 @@
+1. `MegaDepth_images` contains the images in the scene
+2. `MegaDepth` contains the per-image information. Each file is named as `sceneid_subsceneid.npy.npz` and can be loaded as `dump = np.load(filename, allow_pickle=True)`. It contains 3 things, the image file name, the xys coordinates of the tracks and indices of visible points. You can check the exact names of the attributes using `dump.files` and then access the attribute as `dump[attribute_name]`.
+3. `MegaDepth_index` contains a `pairs_metadata_for_eval.csv` which has the image ID pairs, overlap scores and whether it is in the test set or not. 
