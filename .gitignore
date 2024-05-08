@@ -2,6 +2,7 @@ datasets/
 experiments/
 weights/
 wandb/
+data/
 out/
 hyperfeatures/
 seeds/
