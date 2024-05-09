@@ -164,7 +164,7 @@ def validate_modified(config, aggregation_network, val_anns):
     plot_every_n_steps = config.get("plot_every_n_steps", -1)
     pck_threshold = config["pck_threshold"]
     ids, val_dist, val_pck_img, val_pck_bbox = [], [], [], []
-    for j, ann in tqdm(enumerate(val_anns.index[:10])):
+    for j, ann in tqdm(enumerate(val_anns.index)):
         with torch.no_grad():
             # load_image_pair_modified(i, train_anns, load_size, device, output_size=output_size)
             source_points, target_points, img1_pil, img2_pil, imgs = load_image_pair_modified(ann, val_anns, load_size, device, output_size=output_size)

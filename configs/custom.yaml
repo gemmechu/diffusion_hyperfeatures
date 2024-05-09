@@ -21,7 +21,7 @@ weight_decay: 0
 max_epochs: 1
 max_steps_per_epoch: 5000
 val_every_n_steps: 500
-plot_every_n_steps: 500
+plot_every_n_steps: 300
 lr: 1e-3
 # ======== Model Hparams =========
 projection_dim: 384
