@@ -64,11 +64,17 @@ def load_image_pair_modified(img_pair_idx, pair_info, load_size, device, output_
     img_id0 = pair_info.img_id0[img_pair_idx] #321
     img_id1 = pair_info.img_id1[img_pair_idx] #176
     
-    img0_md = np.load("data/MegaDepth/00" + str(scene_name) +"/dense/frames/" + str(img_id0) + "_0.npy.npz")
-    img1_md = np.load("data/MegaDepth/00" + str(scene_name) +"/dense/frames/" + str(img_id1) + "_0.npy.npz")
+    # img0_md = np.load("data/MegaDepth/00" + str(scene_name) +"/dense/frames/" + str(img_id0) + "_0.npy.npz")
+    # img1_md = np.load("data/MegaDepth/00" + str(scene_name) +"/dense/frames/" + str(img_id1) + "_0.npy.npz")
 
-    img0_path = "data/MegaDepth_images/00" + str(scene_name) +"/dense/images/" + str(img0_md["image_fn"])
-    img1_path = "data/MegaDepth_images/00" + str(scene_name) +"/dense/images/" + str(img1_md["image_fn"])
+    # img0_path = "data/MegaDepth_images/00" + str(scene_name) +"/dense/images/" + str(img0_md["image_fn"])
+    # img1_path = "data/MegaDepth_images/00" + str(scene_name) +"/dense/images/" + str(img1_md["image_fn"])
+
+    img0_md = np.load("/share/phoenix/nfs02/S2/localdisk/ac2538/tracking/MegaDepth_v1_phoenix/" + str(scene_name) +"/frames/" + str(img_id0) + f"_{1 if scene_name.endswith('1') else 0}.npy.npz")
+    img1_md = np.load("/share/phoenix/nfs02/S2/localdisk/ac2538/tracking/MegaDepth_v1_phoenix/" + str(scene_name) +"/frames/" + str(img_id1) + f"_{1 if scene_name.endswith('1') else 0}.npy.npz")
+
+    img0_path = "/share/phoenix/nfs02/S2/localdisk/ac2538/MegaDepth_v1_phoenix/" + str(scene_name) +"/images/" + str(img0_md["image_fn"])
+    img1_path = "/share/phoenix/nfs02/S2/localdisk/ac2538/MegaDepth_v1_phoenix/" + str(scene_name) +"/images/" + str(img1_md["image_fn"])
 
     img0_pil = Image.open(img0_path)
     img1_pil = Image.open(img1_path)

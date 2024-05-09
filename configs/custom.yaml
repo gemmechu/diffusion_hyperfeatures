@@ -1,13 +1,14 @@
 # ======== Customize Paths =======
 image_path: datasets/SPair-71k/JPEGImages
 wandb_run: sdv1-5_one-step
-wandb_project: dhf
+wandb_project: cs6785
 results_folder: experiments
 # ======== Data / Logging ========
 pck_threshold: 0.1
-train_path: data/MegaDepth/0015/dense/pairs_metadata.csv
-val_path: data/MegaDepth/0015/dense/pairs_metadata_for_eval.csv
-proj_md_path: data/proj_md_traindata2
+train_path: /home/ac2538/work/diffusion_hyperfeatures_modified/pairs_metadata.csv
+val_path: /home/ac2538/work/diffusion_hyperfeatures_modified/pairs_metadata_for_eval.csv
+proj_md_path: /share/hariharan/ac2538/proj_md_traindata2/
+proj_md_val_path: /share/hariharan/ac2538/proj_md_traindata2_val/
 flip_timesteps: False
 # ======= Ours (All Steps) =======
 # save_timestep: [49, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0]
@@ -18,9 +19,9 @@ num_timesteps: 1
 # ======= Training Hparams =======
 weight_decay: 0
 max_epochs: 1
-max_steps_per_epoch: 30
-val_every_n_steps: 1000
-plot_every_n_steps: -1
+max_steps_per_epoch: 5000
+val_every_n_steps: 500
+plot_every_n_steps: 500
 lr: 1e-3
 # ======== Model Hparams =========
 projection_dim: 384
