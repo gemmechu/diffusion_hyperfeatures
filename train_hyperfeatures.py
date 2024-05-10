@@ -24,6 +24,7 @@ from archs.stable_diffusion.resnet import collect_dims
 from archs.diffusion_extractor import DiffusionExtractor
 from archs.aggregation_network import AggregationNetwork
 from image_pair_reader import load_image_pair_modified
+from metrics import px_th_noquery
 
 def get_rescale_size(config):
     output_size = (config["output_resolution"], config["output_resolution"])
@@ -68,9 +69,9 @@ def get_hyperfeats_modified(img_pair_idx, pair_info, aggregation_network,device,
     img_id1 = pair_info.img_id1[img_pair_idx] 
 
     tk_id = [0, 128, 261]
-    img0_feat = torch.empty([3,1280,16,16])
-    img1_feat = torch.empty([3,1280,16,16])
-    for i in range(3):
+    img0_feat = torch.empty([len(tk_id),1280,16,16])
+    img1_feat = torch.empty([len(tk_id),1280,16,16])
+    for i in range(len(tk_id)):
         img0_feat[i] = (torch.load(f"/share/hariharan/ac2538/proj_md_traindata2{'_val' if split == 'val' else ''}/scene_" + str(scene_name.replace("/", "-"))+"_imgid_" + str(img_id0) +".pt")['dift'][tk_id[i]]).squeeze()
         img1_feat[i] = (torch.load(f"/share/hariharan/ac2538/proj_md_traindata2{'_val' if split == 'val' else ''}/scene_" + str(scene_name.replace("/", "-"))+"_imgid_" + str(img_id1) +".pt")['dift'][tk_id[i]]).squeeze()
 
@@ -152,7 +153,7 @@ def save_model(config, aggregation_network, optimizer, step):
 #     wandb.log({"val/pck_bbox": val_pck_bbox.sum() / len(val_pck_bbox)})
 #     wandb.log({f"val/distances_csv": wandb.Table(dataframe=df)})
 
-def validate_modified(config, aggregation_network, val_anns):
+def validate_modified(config, aggregation_network, val_anns, train_step, dump_pairs=False):
     
     pt_files = glob.glob(os.path.join(config["proj_md_val_path"], '**', '*.pt'), recursive=True)
     existing_data = {int(os.path.basename(file).split('_')[-1].replace('.pt', '')) for file in pt_files}
@@ -164,47 +165,89 @@ def validate_modified(config, aggregation_network, val_anns):
     plot_every_n_steps = config.get("plot_every_n_steps", -1)
     pck_threshold = config["pck_threshold"]
     ids, val_dist, val_pck_img, val_pck_bbox = [], [], [], []
-    for j, ann in tqdm(enumerate(val_anns.index)):
+    # import ipdb; ipdb.set_trace()
+    val_loss = 0
+    j = 0
+    
+    all_px_th_dict = None
+    for j, ann in tqdm(enumerate(list(val_anns.index))):
         with torch.no_grad():
             # load_image_pair_modified(i, train_anns, load_size, device, output_size=output_size)
             source_points, target_points, img1_pil, img2_pil, imgs = load_image_pair_modified(ann, val_anns, load_size, device, output_size=output_size)
             img1_hyperfeats, img2_hyperfeats = get_hyperfeats_modified(ann, val_anns, aggregation_network, device, split="val")
             loss = compute_clip_loss(aggregation_network, img1_hyperfeats, img2_hyperfeats, source_points, target_points, output_size)
-            wandb.log({"val/loss": loss.item()}, step=j)
+            # wandb.log({"val/loss": loss.item()}, step=j)
+            val_loss += loss.detach().cpu().item()
             # Log NN correspondences
             _, predicted_points = find_nn_source_correspondences(img1_hyperfeats, img2_hyperfeats, source_points, output_size, load_size)
             predicted_points = predicted_points.detach().cpu().numpy()
             # Rescale to the original image dimensions
             target_size = output_size
-            predicted_points = rescale_points(predicted_points, load_size, target_size)
-            target_points = rescale_points(target_points, load_size, target_size)
+            
+            # import ipdb; ipdb.set_trace()
+            source_points = rescale_points(source_points, output_size, load_size)
+            predicted_points = rescale_points(predicted_points, output_size, load_size)
+            target_points = rescale_points(target_points, output_size, load_size)
             # import ipdb; ipdb.set_trace()
             dist, pck_img, sample_pck_img = compute_pck(predicted_points, target_points, target_size, pck_threshold=pck_threshold)
             # _, pck_bbox, sample_pck_bbox = compute_pck(predicted_points, target_points, target_size, pck_threshold=pck_threshold, target_bounding_box=ann["target_bounding_box"])
-            wandb.log({"val/sample_pck_img": sample_pck_img}, step=j)
+            
+            px_th_dict = px_th_noquery(
+                torch.from_numpy(target_points).reshape(1, -1, 1, 2),
+                torch.from_numpy(predicted_points).reshape(1, -1, 1, 2)
+            )
+            if all_px_th_dict is None:
+                all_px_th_dict = px_th_dict
+            else:
+                for key, value in px_th_dict.items():
+                    all_px_th_dict[key] += value
+            # wandb.log({"val/sample_pck_img": sample_pck_img}, step=j)
             # wandb.log({"val/sample_pck_bbox": sample_pck_bbox}, step=j)
             val_dist.append(dist)
             val_pck_img.append(pck_img)
             # val_pck_bbox.append(pck_bbox)
             ids.append([j] * len(dist))
+            
+            if dump_pairs:
+                
+                dump_dir = "./dumps"
+                os.makedirs(dump_dir, exist_ok=True)
+                dump_fn = os.path.join(dump_dir, f"pair_{j}.npz")
+                np.savez(dump_fn, 
+                         source_points=source_points, 
+                         target_points=target_points, 
+                         predicted_points=predicted_points,
+                         img1=np.array(img1_pil),
+                         img2=np.array(img2_pil)
+                )
+            
+            
             if plot_every_n_steps > 0 and j % plot_every_n_steps == 0:
                 title = f"pck@{pck_threshold}_img: {sample_pck_img.round(decimals=2)}"
                 # title += f"\npck@{pck_threshold}_bbox: {sample_pck_bbox.round(decimals=2)}"
-                draw_correspondences(source_points, predicted_points, img1_pil, img2_pil, title=title, radius1=1)
-                wandb.log({"val/correspondences": plt}, step=j)
+                # import ipdb; ipdb.set_trace()
+                draw_correspondences(source_points, predicted_points, img1_pil, img2_pil, title=title)
+                wandb.log({"val/correspondences": plt}, step=train_step)
+    
+    for key, value in all_px_th_dict.items():
+        all_px_th_dict[key] = value / (j+1)
+        wandb.log({f"val/{key}": all_px_th_dict[key]}, step=train_step)
+    val_loss /= (j+1)
+    wandb.log({"val/loss": val_loss}, step=train_step)
+    
     ids = np.concatenate(ids)
     val_dist = np.concatenate(val_dist)
     val_pck_img = np.concatenate(val_pck_img)
     # val_pck_bbox = np.concatenate(val_pck_bbox)
-    df = pd.DataFrame({
-        "id": ids,
-        "distances": val_dist,
-        "pck_img": val_pck_img,
-        # "pck_bbox": val_pck_bbox,
-    })
-    wandb.log({"val/pck_img": val_pck_img.sum() / len(val_pck_img)})
+    # df = pd.DataFrame({
+    #     "id": ids,
+    #     "distances": val_dist,
+    #     "pck_img": val_pck_img,
+    #     # "pck_bbox": val_pck_bbox,
+    # })
+    # wandb.log({"val/pck_img": val_pck_img.sum() / len(val_pck_img)})
     # wandb.log({"val/pck_bbox": val_pck_bbox.sum() / len(val_pck_bbox)})
-    wandb.log({f"val/distances_csv": wandb.Table(dataframe=df)})
+    # wandb.log({f"val/distances_csv": wandb.Table(dataframe=df)})
 
 def train(config, diffusion_extractor, aggregation_network, optimizer, train_anns, val_anns):
     device = config.get("device", "cuda")
@@ -263,11 +306,11 @@ def train_modified(config, aggregation_network, optimizer, pair_info, val_anns):
             loss.backward()
             optimizer.step()
             wandb.log({"train/loss": loss.item()}, step=step)
-            if step > 0 and config["val_every_n_steps"] > 0 and step % config["val_every_n_steps"] == 0:
+            if config["val_every_n_steps"] > 0 and step % config["val_every_n_steps"] == 0:
                 with torch.no_grad():
                     log_aggregation_network(aggregation_network, config)
                     save_model(config, aggregation_network, optimizer, step)
-                    validate_modified(config, aggregation_network, val_anns)
+                    validate_modified(config, aggregation_network, val_anns, train_step=step)
             counter += 1
 def load_models(config_path):
     config = OmegaConf.load(config_path)
@@ -291,7 +334,7 @@ def load_models(config_path):
 def main(args):
     config, diffusion_extractor, aggregation_network = load_models(args.config_path)
     wandb.init(project=config["wandb_project"], name=config["wandb_run"])
-    wandb.run.name = f"{str(wandb.run.id)}_{wandb.run.name}"
+    # wandb.run.name = f"{str(wandb.run.id)}_{wandb.run.name}"
     parameter_groups = [
         {"params": aggregation_network.mixing_weights, "lr": config["lr"]},
         {"params": aggregation_network.bottleneck_layers.parameters(), "lr": config["lr"]}
@@ -310,8 +353,9 @@ def main(args):
     
     # if config.get("weights_path"):
     #     aggregation_network.load_state_dict(torch.load(config["weights_path"], map_location="cpu")["aggregation_network"])
-    validate(config, diffusion_extractor, aggregation_network, val_anns)
-
+    validate_modified(config, aggregation_network, val_anns, train_step=config["max_steps_per_epoch"] + 1, dump_pairs=True)
+    wandb.finish()
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--config_path", type=str, help="Path to yaml config file", default="configs/custom.yaml")
