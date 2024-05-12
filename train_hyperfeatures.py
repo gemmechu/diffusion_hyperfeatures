@@ -234,6 +234,10 @@ def validate_modified(config, aggregation_network, val_anns, train_step, dump_pa
         wandb.log({f"val/{key}": all_px_th_dict[key]}, step=train_step)
     val_loss /= (j+1)
     wandb.log({"val/loss": val_loss}, step=train_step)
+    with open(f"./dumps/val_loss_{train_step}.txt", "w") as f:
+        f.write(str(val_loss))
+    with open(f"./dumps/val_metrics_{train_step}.txt", "w") as f:
+        json.dump(all_px_th_dict, f)
     
     ids = np.concatenate(ids)
     val_dist = np.concatenate(val_dist)
